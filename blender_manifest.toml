@@ -1,0 +1,17 @@
+schema_version = "1.0.0"
+
+id = "midi2ani"
+version = "0.1.0"
+name = "MIDI2Ani"
+tagline = "Stream live MIDI Note/CC data from the macOS IAC Driver into scene properties"
+maintainer = "MIDI2Ani"
+type = "add-on"
+blender_version_min = "4.5.0"
+license = ["SPDX:GPL-3.0-or-later"]
+platforms = ["macos-arm64", "macos-x64"]
+
+# Bundle `mido` (pure Python) and `python-rtmidi` wheels for both LTS interpreters:
+# 4.5 LTS = Python 3.11 (cp311), 5.2 LTS = Python 3.13 (cp313), on macos arm64 and x64.
+#   pip download mido python-rtmidi --only-binary=:all: --python-version 3.11 --platform macosx_11_0_arm64 -d wheels/
+# (repeat per Python version/platform), then list them as:
+# wheels = ["./wheels/mido-<ver>-py3-none-any.whl", ...]
