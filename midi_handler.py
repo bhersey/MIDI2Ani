@@ -10,6 +10,9 @@ _PORT_KEYWORD = "IAC"
 _POLL_SECONDS = 0.002
 _RETRY_SECONDS = 1.0
 _DRAIN_INTERVAL = 1 / 60
+_SIZE = 128
+_last_error = None
+_initialised = False
 
 # Items are (kind, index, value) tuples of plain ints; never bpy objects.
 _queue = queue.Queue(maxsize=4096)
@@ -56,13 +59,20 @@ def _worker(stop_event):
 
 
 def _to_item(msg):
-    if msg.type == "control_change":
-        return ("cc", msg.control, msg.value)
-    if msg.type == "note_on":
-        return ("note", msg.note, msg.velocity)
-    if msg.type == "note_off":
-        return ("note", msg.note, 0)
-    return None
+    try:
+        if msg.type == "control_change":
+            kind, index, value = "cc", msg.control, msg.value
+        elif msg.type == "note_on":
+            kind, index, value = "note", msg.note, msg.velocity
+        elif msg.type == "note_off":
+            kind, index, value = "note", msg.note, 0
+        else:
+            return None
+    except AttributeError:
+        return None
+    if not (0 <= index < _SIZE):
+        return None
+    return (kind, index, max(0, min(127, int(value))))
 
 
 def start_thread():
@@ -103,18 +113,26 @@ def drain_queue():
     if not cc and not notes:
         return
 
-    scene = bpy.context.scene
-    if scene is None:
-        return
-    custom_properties.ensure(scene)
-    cc_arr = scene[custom_properties.CC_KEY]
-    note_arr = scene[custom_properties.NOTE_KEY]
-    for index, value in cc.items():
-        cc_arr[index] = value
-    for index, value in notes.items():
-        note_arr[index] = value
-    # ID-property writes don't tag the depsgraph, so drivers need an explicit nudge.
-    scene.update_tag()
+    global _last_error
+    try:
+        scene = bpy.context.scene
+        if scene is None:
+            return
+        custom_properties.ensure(scene)
+        cc_arr = scene[custom_properties.CC_KEY]
+        note_arr = scene[custom_properties.NOTE_KEY]
+        for index, value in cc.items():
+            cc_arr[index] = value
+        for index, value in notes.items():
+            note_arr[index] = value
+        # ID-property writes don't tag the depsgraph, so drivers need an explicit nudge.
+        scene.update_tag()
+    except Exception as exc:
+        # Context can be restricted/unavailable (e.g. during file load); drop this batch.
+        msg = str(exc)
+        if msg != _last_error:
+            _last_error = msg
+            print(f"[MIDI2Ani] could not write MIDI data: {msg}")
 
 
 # `scene_update_pre` was removed in Blender 2.8; `depsgraph_update_pre` replaces it.
@@ -126,13 +144,33 @@ def _on_update_pre(*_args):
     drain_queue()
 
 
+@persistent
+def _on_load_post(*_args):
+    _ensure_all_safe()
+
+
+def _ensure_all_safe():
+    try:
+        custom_properties.ensure_all()
+    except Exception as exc:
+        print(f"[MIDI2Ani] could not initialise scene properties: {exc}")
+
+
 def _timer():
     # Handlers only fire on depsgraph changes, so this keeps data live while idle.
+    global _initialised
+    if not _initialised:
+        _ensure_all_safe()  # first tick: bpy.data is fully available here
+        _initialised = True
     drain_queue()
     return _DRAIN_INTERVAL
 
 
 def register():
+    global _initialised
+    _initialised = False
+    if _on_load_post not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_on_load_post)
     if _on_update_pre not in _PRE_HANDLERS:
         _PRE_HANDLERS.append(_on_update_pre)
     if not bpy.app.timers.is_registered(_timer):
@@ -141,6 +179,8 @@ def register():
 
 
 def unregister():
+    if _on_load_post in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_on_load_post)
     if bpy.app.timers.is_registered(_timer):
         bpy.app.timers.unregister(_timer)
     if _on_update_pre in _PRE_HANDLERS:

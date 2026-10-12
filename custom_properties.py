@@ -16,13 +16,16 @@ def ensure(scene):
             scene[key] = [0] * _SIZE
 
 
-def register():
+def ensure_all():
     for scene in bpy.data.scenes:
         ensure(scene)
 
 
+def register():
+    # bpy.data is restricted during registration; callers use ensure_all() later
+    # (load_post handler / first timer tick) instead.
+    pass
+
+
 def unregister():
-    for scene in bpy.data.scenes:
-        for key in _KEYS:
-            if key in scene:
-                del scene[key]
+    pass

@@ -15,7 +15,7 @@ No build system, tests, or linter exist. `bpy` is only available inside Blender,
 ## Architecture
 
 - `__init__.py` – `register()`/`unregister()` order matters: custom_properties first, then the MIDI handler; unregister reverses this (stop handlers/timer/thread before deleting properties).
-- `custom_properties.py` – stores `midi_cc_values` / `midi_note_values` as 128-int **ID properties** on the Scene (`scene["midi_cc_values"][n]`), not RNA properties: Blender caps RNA vector properties at 32 elements. `ensure(scene)` creates them lazily. Index = CC/note number; note value is velocity, note_off is 0.
+- `custom_properties.py` – stores `midi_cc_values` / `midi_note_values` as 128-int **ID properties** on the Scene (`scene["midi_cc_values"][n]`), not RNA properties: Blender caps RNA vector properties at 32 elements. `ensure(scene)` creates them; `register()` must not touch `bpy.data` (restricted during registration), so `ensure_all()` runs from a `load_post` handler and the first timer tick. Index = CC/note number; note value is velocity, note_off is 0.
 - `midi_handler.py` – data pipeline:
   1. A daemon worker thread opens the first input port whose name contains "IAC" (retries every 1s if missing or on error) and polls with `iter_pending()`.
   2. Messages become plain `(kind, index, value)` tuples pushed to a bounded `queue.Queue` (dropped when full).
@@ -24,6 +24,7 @@ No build system, tests, or linter exist. `bpy` is only available inside Blender,
 ## Conventions
 
 - The worker thread must never touch `bpy`; only plain ints cross the queue. All `bpy` writes happen in `drain_queue()` on the main thread.
+- Runtime MIDI/bpy errors must never propagate out of the timer/handlers: `_to_item` validates index/value ranges and `drain_queue` catches and logs (deduplicated) write failures.
 - `mido` is imported lazily inside the worker so the add-on still loads if it's missing.
 - Every register step needs a matching, idempotent unregister (check `is_registered` / list membership before removing).
 - Only `control_change`, `note_on`, `note_off` are handled; extend `_to_item` for other message types.
