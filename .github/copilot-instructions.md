@@ -14,12 +14,12 @@ No build system, tests, or linter exist. `bpy` is only available inside Blender,
 
 ## Architecture
 
-- `__init__.py` – `register()`/`unregister()` order matters: properties are registered first, then the MIDI handler; unregister reverses this (stop handlers/timer/thread before deleting properties).
-- `custom_properties.py` – defines `Scene.midi_cc_values` and `Scene.midi_note_values`: 128-int vectors (0–127) indexed by CC number / note number. Note value is velocity; note_off is stored as 0.
+- `__init__.py` – `register()`/`unregister()` order matters: custom_properties first, then the MIDI handler; unregister reverses this (stop handlers/timer/thread before deleting properties).
+- `custom_properties.py` – stores `midi_cc_values` / `midi_note_values` as 128-int **ID properties** on the Scene (`scene["midi_cc_values"][n]`), not RNA properties: Blender caps RNA vector properties at 32 elements. `ensure(scene)` creates them lazily. Index = CC/note number; note value is velocity, note_off is 0.
 - `midi_handler.py` – data pipeline:
   1. A daemon worker thread opens the first input port whose name contains "IAC" (retries every 1s if missing or on error) and polls with `iter_pending()`.
   2. Messages become plain `(kind, index, value)` tuples pushed to a bounded `queue.Queue` (dropped when full).
-  3. On the main thread, `drain_queue()` collapses the queue (last value wins) and writes to the scene properties. It's called from both a `depsgraph_update_pre` handler and a ~60 Hz persistent `bpy.app.timers` timer (handlers alone don't fire while idle).
+  3. On the main thread, `drain_queue()` collapses the queue (last value wins) and writes to the scene ID properties and calls `scene.update_tag()` (ID-prop writes don't tag the depsgraph). It's called from both a `depsgraph_update_pre` handler and a ~60 Hz persistent `bpy.app.timers` timer (handlers alone don't fire while idle).
 
 ## Conventions
 

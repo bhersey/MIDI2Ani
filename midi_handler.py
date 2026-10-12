@@ -4,6 +4,8 @@ import threading
 import bpy
 from bpy.app.handlers import persistent
 
+from . import custom_properties
+
 _PORT_KEYWORD = "IAC"
 _POLL_SECONDS = 0.002
 _RETRY_SECONDS = 1.0
@@ -104,10 +106,15 @@ def drain_queue():
     scene = bpy.context.scene
     if scene is None:
         return
+    custom_properties.ensure(scene)
+    cc_arr = scene[custom_properties.CC_KEY]
+    note_arr = scene[custom_properties.NOTE_KEY]
     for index, value in cc.items():
-        scene.midi_cc_values[index] = value
+        cc_arr[index] = value
     for index, value in notes.items():
-        scene.midi_note_values[index] = value
+        note_arr[index] = value
+    # ID-property writes don't tag the depsgraph, so drivers need an explicit nudge.
+    scene.update_tag()
 
 
 # `scene_update_pre` was removed in Blender 2.8; `depsgraph_update_pre` replaces it.

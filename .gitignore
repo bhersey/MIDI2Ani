@@ -1,0 +1,12 @@
+# Built extension packages and archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# Python / macOS artifacts
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
